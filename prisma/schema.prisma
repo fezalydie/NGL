@@ -1,0 +1,359 @@
+// ES Rubengera Student Management System - Database Schema
+// This file defines all database tables and relationships.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ROLES & PERMISSIONS
+// ─────────────────────────────────────────────
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique // ADMIN, STAFF, STUDENT
+  description String?
+  users       User[]
+  permissions Permission[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Permission {
+  id     String @id @default(cuid())
+  action String // e.g., "students:read", "results:write"
+  roles  Role[]
+}
+
+// ─────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String // NEVER store plain text passwords
+  firstName    String
+  lastName     String
+  phone        String?
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  student      Student?
+  staff        Staff?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([email])
+  @@index([roleId])
+}
+
+// ─────────────────────────────────────────────
+// SCHOOLS, PROGRAMS, COURSES
+// ─────────────────────────────────────────────
+
+model School {
+  id          String    @id @default(cuid())
+  name        String
+  code        String    @unique
+  location    String?
+  contact     String?
+  description String?
+  programs    Program[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Program {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  level       String? // e.g., "Certificate", "Diploma", "Degree"
+  duration    String? // e.g., "2 years"
+  description String?
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+  courses     Course[]
+  students    Student[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  credits     Int      @default(0)
+  description String?
+  programId   String
+  program     Program  @relation(fields: [programId], references: [id])
+  results     Result[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([programId])
+}
+
+// ─────────────────────────────────────────────
+// ACADEMIC YEARS & TERMS
+// ─────────────────────────────────────────────
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  name      String   @unique // e.g., "2026-2027"
+  startDate DateTime?
+  endDate   DateTime?
+  isCurrent Boolean  @default(false)
+  terms     Term[]
+  students  Student[]
+  results   Result[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Term {
+  id            String       @id @default(cuid())
+  name          String // e.g., "Term 1", "Term 2", "Term 3"
+  academicYearId String
+  academicYear  AcademicYear @relation(fields: [academicYearId], references: [id])
+  results       Result[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([name, academicYearId])
+  @@index([academicYearId])
+}
+
+// ─────────────────────────────────────────────
+// STUDENTS & STAFF
+// ─────────────────────────────────────────────
+
+model Student {
+  id                 String             @id @default(cuid())
+  studentNumber      String             @unique // e.g., "ER20260001"
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id])
+  dateOfBirth        DateTime?
+  gender             String?
+  address            String?
+  programId          String
+  program            Program            @relation(fields: [programId], references: [id])
+  academicYearId     String
+  academicYear       AcademicYear       @relation(fields: [academicYearId], references: [id])
+  registrationStatus String             @default("PENDING") // PENDING, APPROVED, REJECTED
+  registrations      Registration[]
+  results            Result[]
+  fees               StudentFee[]
+  payments           Payment[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([studentNumber])
+  @@index([userId])
+  @@index([programId])
+  @@index([academicYearId])
+  @@index([registrationStatus])
+}
+
+model Staff {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  title     String? // e.g., "Lecturer", "Head of Department"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// REGISTRATIONS
+// ─────────────────────────────────────────────
+
+model Registration {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id])
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  reviewedBy  String? // User ID of admin who reviewed
+  reviewedAt  DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// EXAMINATIONS & RESULTS
+// ─────────────────────────────────────────────
+
+model Examination {
+  id              String             @id @default(cuid())
+  name            String // e.g., "Mid-Term", "Final"
+  academicYearId  String
+  academicYear    AcademicYear       @relation(fields: [academicYearId], references: [id])
+  termId          String
+  term            Term               @relation(fields: [termId], references: [id])
+  examinationResults ExaminationResult[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([academicYearId])
+  @@index([termId])
+}
+
+model Result {
+  id            String       @id @default(cuid())
+  studentId     String
+  student       Student      @relation(fields: [studentId], references: [id])
+  courseId      String
+  course        Course       @relation(fields: [courseId], references: [id])
+  academicYearId String
+  academicYear  AcademicYear @relation(fields: [academicYearId], references: [id])
+  termId        String
+  term          Term         @relation(fields: [termId], references: [id])
+  marks         Float?
+  grade         String?
+  remark        String?
+  status        String       @default("DRAFT") // DRAFT, SUBMITTED, PUBLISHED
+  publishedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([studentId, courseId, academicYearId, termId])
+  @@index([studentId])
+  @@index([courseId])
+  @@index([status])
+}
+
+model ExaminationResult {
+  id            String      @id @default(cuid())
+  examinationId String
+  examination   Examination @relation(fields: [examinationId], references: [id])
+  resultId      String      @unique
+  result        Result      @relation(fields: [resultId], references: [id])
+  createdAt     DateTime    @default(now())
+
+  @@index([examinationId])
+}
+
+// ─────────────────────────────────────────────
+// FEES & PAYMENTS
+// ─────────────────────────────────────────────
+
+model FeeStructure {
+  id            String   @id @default(cuid())
+  name          String // e.g., "Tuition Fee", "Registration Fee"
+  amount        Float
+  description   String?
+  academicYearId String?
+  academicYear  AcademicYear? @relation(fields: [academicYearId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([academicYearId])
+}
+
+model StudentFee {
+  id             String      @id @default(cuid())
+  studentId      String
+  student        Student     @relation(fields: [studentId], references: [id])
+  feeStructureId String
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id])
+  amount         Float
+  dueDate        DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([studentId])
+  @@index([feeStructureId])
+}
+
+model Payment {
+  id              String            @id @default(cuid())
+  studentId       String
+  student         Student           @relation(fields: [studentId], references: [id])
+  amount          Float
+  status          String            @default("PENDING") // PENDING, SUCCESSFUL, FAILED, CANCELLED, REFUNDED
+  paymentMethod   String? // e.g., "Mobile Money", "Bank Transfer"
+  transactionRef  String?           @unique // Unique transaction reference
+  paidAt          DateTime?
+  receipts        Receipt[]
+  transactions    PaymentTransaction[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([studentId])
+  @@index([status])
+  @@index([transactionRef])
+}
+
+model PaymentTransaction {
+  id            String   @id @default(cuid())
+  paymentId     String
+  payment       Payment  @relation(fields: [paymentId], references: [id])
+  transactionId String   @unique // Unique transaction ID from provider
+  amount        Float
+  status        String // PENDING, SUCCESSFUL, FAILED
+  providerRef   String? // Reference from payment provider
+  rawResponse   String? // Raw response from provider (for debugging)
+  createdAt     DateTime @default(now())
+
+  @@index([paymentId])
+  @@index([transactionId])
+}
+
+model Receipt {
+  id          String   @id @default(cuid())
+  receiptNo   String   @unique // e.g., "RCP-2026-0001"
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id])
+  amount      Float
+  issuedAt    DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([paymentId])
+  @@index([receiptNo])
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String? // Can be null for broadcast notifications
+  title     String
+  message   String
+  type      String // REGISTRATION_APPROVED, PAYMENT_SUCCESSFUL, RESULT_PUBLISHED, etc.
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOGS
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String? // User who performed the action
+  action    String // LOGIN, STUDENT_CREATED, REGISTRATION_APPROVED, etc.
+  record    String? // Description of what was affected
+  metadata  String? // JSON string with additional details
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}

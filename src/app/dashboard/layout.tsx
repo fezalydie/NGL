@@ -1,43 +1,75 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
-import { RoleSwitcher } from "@/components/dashboard/role-switcher";
+import { LogoutButton } from "@/components/dashboard/logout-button";
 import type { UserRole } from "@/types";
 
-const defaultNames: Record<UserRole, string> = {
-  ADMIN: "Admin User",
-  STAFF: "John Teacher",
-  STUDENT: "Alice Mukamana",
-};
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+}
 
 /**
- * Dashboard layout — Phase 3.
- * Provides role-based sidebar navigation.
- * Authentication will be integrated in Phase 4.
+ * Dashboard layout — Phase 4.
+ * Uses real authentication session.
  */
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // TODO: Replace with real auth session in Phase 4
-  const [role, setRole] = useState<UserRole>("ADMIN");
   const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const handleRoleChange = (newRole: UserRole) => {
-    setRole(newRole);
-    router.push(`/dashboard/${newRole.toLowerCase()}`);
-  };
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data.user);
+        } else {
+          router.push("/login");
+        }
+      } catch {
+        router.push("/login");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadUser();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="animate-pulse text-sm text-zinc-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar role={role} userName={defaultNames[role]} />
+      <Sidebar
+        role={user.role}
+        userName={`${user.firstName} ${user.lastName}`}
+      />
       <div className="flex flex-1 flex-col">
-        {/* Top bar with role switcher */}
-        <div className="flex h-14 items-center justify-end border-b border-zinc-200 bg-white px-6">
-          <RoleSwitcher currentRole={role} onRoleChange={handleRoleChange} />
+        {/* Top bar */}
+        <div className="flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-6">
+          <div className="text-sm text-zinc-500">
+            Logged in as{" "}
+            <span className="font-medium text-zinc-900">{user.email}</span>
+          </div>
+          <LogoutButton />
         </div>
         {/* Main content */}
         <main className="flex-1 overflow-y-auto bg-zinc-50 p-8">

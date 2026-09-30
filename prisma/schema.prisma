@@ -115,6 +115,8 @@ model AcademicYear {
   terms     Term[]
   students  Student[]
   results   Result[]
+  examinations Examination[]
+  feeStructures FeeStructure[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -125,6 +127,7 @@ model Term {
   academicYearId String
   academicYear  AcademicYear @relation(fields: [academicYearId], references: [id])
   results       Result[]
+  examinations  Examination[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -232,6 +235,7 @@ model Result {
   @@index([studentId])
   @@index([courseId])
   @@index([status])
+  examinationResults ExaminationResult[]
 }
 
 model ExaminationResult {
@@ -256,6 +260,7 @@ model FeeStructure {
   description   String?
   academicYearId String?
   academicYear  AcademicYear? @relation(fields: [academicYearId], references: [id])
+  studentFees   StudentFee[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

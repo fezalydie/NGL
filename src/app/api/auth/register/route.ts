@@ -2,34 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createSession, setSessionCookie } from "@/lib/auth";
+import { registerSchema } from "@/lib/validations";
 
 /**
  * POST /api/auth/register
- * Registers a new student account.
+ * Registers a new student with full profile and creates a registration record.
+ * All fields are validated server-side using Zod.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { firstName, lastName, email, phone, password } = body;
 
-    // Validation
-    if (!firstName || !lastName || !email || !phone || !password) {
+    // Validate all fields with Zod
+    const validation = registerSchema.safeParse(body);
+    if (!validation.success) {
+      const errors = validation.error.errors.map((e) => e.message);
       return NextResponse.json(
-        { error: "All fields are required" },
+        { error: errors.join(", ") },
         { status: 400 }
       );
     }
 
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: "Password must be at least 8 characters" },
-        { status: 400 }
-      );
-    }
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      password,
+      dateOfBirth,
+      gender,
+      address,
+      programId,
+    } = validation.data;
 
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+      where: { email },
     });
 
     if (existingUser) {
@@ -51,28 +59,84 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get current academic year
+    const currentAcademicYear = await prisma.academicYear.findFirst({
+      where: { isCurrent: true },
+    });
+
+    if (!currentAcademicYear) {
+      return NextResponse.json(
+        { error: "No active academic year found. Contact administration." },
+        { status: 500 }
+      );
+    }
+
+    // Generate student number (ER + year + 4-digit sequence)
+    const year = new Date().getFullYear();
+    const lastStudent = await prisma.student.findFirst({
+      where: {
+        studentNumber: {
+          startsWith: `ER${year}`,
+        },
+      },
+      orderBy: { studentNumber: "desc" },
+    });
+
+    const nextNumber = lastStudent
+      ? parseInt(lastStudent.studentNumber.slice(-4)) + 1
+      : 1;
+    const studentNumber = `ER${year}${nextNumber.toString().padStart(4, "0")}`;
+
     // Hash password
     const passwordHash = await hash(password, 10);
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        email: email.toLowerCase().trim(),
-        passwordHash,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        phone: phone.trim(),
-        roleId: studentRole.id,
-      },
+    // Create user, student profile, and registration in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Create user
+      const user = await tx.user.create({
+        data: {
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          phone,
+          roleId: studentRole.id,
+        },
+      });
+
+      // Create student profile
+      const student = await tx.student.create({
+        data: {
+          studentNumber,
+          userId: user.id,
+          dateOfBirth: new Date(dateOfBirth),
+          gender: gender.toUpperCase(),
+          address: address || null,
+          programId,
+          academicYearId: currentAcademicYear.id,
+          registrationStatus: "PENDING",
+        },
+      });
+
+      // Create registration record
+      const registration = await tx.registration.create({
+        data: {
+          studentId: student.id,
+          status: "PENDING",
+          notes: "New registration pending review",
+        },
+      });
+
+      return { user, student, registration };
     });
 
     // Create session
     const session = await createSession({
-      userId: user.id,
-      email: user.email,
+      userId: result.user.id,
+      email: result.user.email,
       role: "STUDENT",
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: result.user.firstName,
+      lastName: result.user.lastName,
     });
 
     await setSessionCookie(session);
@@ -80,12 +144,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
+          id: result.user.id,
+          email: result.user.email,
+          firstName: result.user.firstName,
+          lastName: result.user.lastName,
           role: "STUDENT",
         },
+        student: {
+          id: result.student.id,
+          studentNumber: result.student.studentNumber,
+          registrationStatus: result.student.registrationStatus,
+        },
+        message:
+          "Registration successful! Your account is pending admin approval.",
       },
       { status: 201 }
     );

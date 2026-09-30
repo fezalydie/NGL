@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Navbar } from "@/components/navigation/navbar";
@@ -8,9 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 
+interface Program {
+  id: string;
+  name: string;
+  code: string;
+  level: string | null;
+}
+
 /**
- * Student registration page — Phase 4.
- * Creates a new student account and logs them in.
+ * Student registration page — Phase 5.
+ * Full registration with program selection and student profile creation.
  */
 export default function RegisterPage() {
   const router = useRouter();
@@ -20,8 +27,28 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [gender, setGender] = useState("");
+  const [address, setAddress] = useState("");
+  const [programId, setProgramId] = useState("");
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadPrograms() {
+      try {
+        const res = await fetch("/api/programs");
+        if (res.ok) {
+          const data = await res.json();
+          setPrograms(data.programs);
+        }
+      } catch {
+        // Silently fail — user can still type
+      }
+    }
+    loadPrograms();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +59,17 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ firstName, lastName, email, phone, password }),
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email,
+          phone,
+          password,
+          dateOfBirth,
+          gender,
+          address,
+          programId,
+        }),
       });
 
       const data = await res.json();
@@ -42,7 +79,6 @@ export default function RegisterPage() {
         return;
       }
 
-      // Redirect to student dashboard
       router.push("/dashboard/student");
     } catch {
       setError("An error occurred. Please try again.");
@@ -109,6 +145,58 @@ export default function RegisterPage() {
               onChange={(e) => setPhone(e.target.value)}
               required
             />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Date of birth"
+                type="date"
+                name="dateOfBirth"
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+              />
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+                  Gender
+                </label>
+                <select
+                  name="gender"
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  className="flex h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="">Select gender</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+            </div>
+            <Input
+              label="Address"
+              name="address"
+              placeholder="Your address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+                Program
+              </label>
+              <select
+                name="programId"
+                value={programId}
+                onChange={(e) => setProgramId(e.target.value)}
+                required
+                className="flex h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Select a program</option>
+                {programs.map((program) => (
+                  <option key={program.id} value={program.id}>
+                    {program.name} ({program.code})
+                    {program.level ? ` — ${program.level}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Input
               label="Password"
               type="password"
